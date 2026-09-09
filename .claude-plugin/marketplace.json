@@ -5,13 +5,13 @@
     "url": "https://wikibot.pro"
   },
   "metadata": {
-    "description": "Claude Code plugins for configuring and debugging Wikibot bots.",
+    "description": "Agent skills for configuring and debugging Wikibot bots.",
     "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "wikibot-config",
-      "source": "./plugins/wikibot-config",
+      "source": "./",
       "description": "Read and edit a Wikibot bot's configuration — settings, agents, scenarios, jobs, datatables, REST function tools, knowledge base articles, and conversation history — through the Wikibot public API.",
       "version": "1.0.0",
       "category": "productivity",
