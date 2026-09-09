@@ -12,16 +12,34 @@ others) — via [skills.sh](https://www.skills.sh):
 npx skills add wikibotpro/skills
 ```
 
+This installs into the current project. Add `-g` to install it once for every
+project:
+
+```
+npx skills add wikibotpro/skills -g
+```
+
 **Claude Code**, as a plugin, if you want it managed with the rest of your
-plugins:
+plugins. From the terminal:
+
+```bash
+claude plugin marketplace add wikibotpro/skills
+claude plugin install wikibot-config@wikibot
+```
+
+Or, inside a Claude Code session, the same two steps as slash commands:
 
 ```
 /plugin marketplace add wikibotpro/skills
 /plugin install wikibot-config@wikibot
 ```
 
+Use the terminal commands if you work in an IDE extension — `/plugin` is not
+available there.
+
 Either way you end up with the same skill — pick whichever fits how you
-already install things.
+already install things. Newly installed skills become available in your next
+session.
 
 ## Setup
 
@@ -33,8 +51,10 @@ The skill needs two environment variables:
 | `WIKIBOT_API_URL` | Optional. Defaults to `https://api.wikibot.pro`.                     |
 
 **The key must have the `manage` scope** — tick it when creating the key, or
-add it to an existing key on the same page. A key that only has `ask` can read
-the flow list and the knowledge base sources, but everything else returns 403.
+add it to an existing key on the same page. A key that only has `ask` is
+limited to the knowledge base endpoints (list and add sources, upload a file,
+run a search) and the deprecated flow-list alias; everything to do with
+configuration returns 403.
 
 Set them in your shell before starting the agent:
 
