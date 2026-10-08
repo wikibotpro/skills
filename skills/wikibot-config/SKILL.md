@@ -1,6 +1,6 @@
 ---
 name: wikibot-config
-description: Read and edit a Wikibot bot's full configuration — bot-level settings, agents (prompts, on/off, options), scenarios, flow cloning, proactive jobs, datatables (schema and data), custom REST function tools, private knowledge base articles, and conversation history — via the Wikibot public API. Use when the user asks to change bot behavior, edit an agent's instruction, create or clone a flow, set up a proactive job, manage a datatable, wire up a REST function, write a KB article, or debug a conversation for their Wikibot integration.
+description: Read and edit a Wikibot bot's full configuration — bot-level settings, agents (prompts, on/off, options), scenarios, flow cloning, proactive jobs, datatables (schema and rows), custom REST function tools, private knowledge base articles, first line (fixed FAQ answers), conversation history, and billing/limits — via the Wikibot public API, plus best-practice recipes for common client needs (catalogs, lead capture, helpdesk history, operator summaries, off-hours transfer). Use when the user asks to change bot behavior, edit an agent's instruction, create or clone a flow, set up a proactive job, manage a datatable, wire up a REST function, write a KB article, debug a conversation, or decide how to implement a client requirement in their Wikibot bot.
 ---
 
 # Wikibot bot configuration
@@ -10,9 +10,12 @@ bot-level templates/filters, per-agent prompts and on/off switches, proactive
 jobs, datatable schemas, and custom REST function tools. This is the same
 surface the in-product Copilot uses, exposed over HTTP for scripted/agent use.
 
-**This API can create and edit, but it can never delete anything** — no
-endpoint removes an agent, job, datatable, or setting. If the user wants
-something removed, tell them to do it from the dashboard.
+**This API can create and edit configuration, but never delete it** — no
+endpoint removes an agent, job, datatable, tool, or setting. If the user wants
+something removed, tell them to do it from the dashboard. The exceptions
+are a datatable's **rows** (see "Datatable rows" below) and **first line
+records** (see "First line" below): they are content, not configuration, and
+can be added, edited, and deleted.
 
 Private (manually-written, not crawled) knowledge base articles can be
 created and edited too — see `/api/bot/articles` below. `/api/bot/kb/*`
@@ -62,7 +65,10 @@ stop *before the AI agent is ever called*:
    5. Outside bot's working hours → `templates.nonWorkingBotRedirect`.
    6. Consecutive-answer limit exceeded → transfer or skip.
 3. **The AI agent** (default, or a scenario it forwards to) — this is where
-   the agent's `prompt` and its custom function tools actually run.
+   the agent's `prompt` and its custom function tools actually run. The
+   **first line** is checked here too, not earlier: inside the agent's
+   knowledge search, right before the knowledge base (see "First line"
+   below).
 4. **Postprocessing** — `editor` agent rewrites the answer, `translator`
    translates it to the client's language, `templates.success` /
    `noAnswer` / `operator` wrap it (each has a `working` / `nonWorking`
@@ -152,6 +158,19 @@ exception: it fires on its own after a conversation has been silent for a
 while, and the agent gets a system message instead of a client message —
 see the Jobs section below for the mechanics.
 
+### Choosing a solution before building one
+
+When the user describes a goal rather than a specific change ("the bot should
+know our catalog", "send the operator a summary", "answer differently at
+night"), **read [solutions.md](solutions.md) first**. It maps common client
+needs to the mechanism that fits — e.g. a product catalog or price list goes
+into a memory table (datatable) the bot queries with SQL, not into the KB or
+the prompt; live stock/order status goes through a REST tool; word-for-word
+regulated answers go to the first line — and has ready
+recipes (prompt snippets, tool definitions, plan limits) for each. Propose the
+mechanism to the user with the reason before creating anything: nothing this
+API creates can be deleted through it.
+
 ## Setup
 
 Requires two environment variables, provided by the user:
@@ -159,7 +178,8 @@ Requires two environment variables, provided by the user:
 - `WIKIBOT_API_KEY` — an integration API key from the bot's Settings → API
   Keys page. **The key's scopes must include `manage`** for everything under
   `/config`, `/flows/:flowId/agents`, `/flows/:flowId/jobs`, `/datatables`,
-  `/tools`, `/articles`, `/conversations`, `/journal`, and
+  `/tools`, `/articles`, `/first-line`, `/conversations`, `/journal`,
+  `/billing`, and
   `GET /api/bot/flows` — a key with only `ask`/`anonymization` (what every key
   had before scopes existed) gets a 403 on those. A handful of older, simpler
   endpoints (`GET /api/bot/agents`, the deprecated alias of `GET /flows`,
@@ -560,6 +580,57 @@ four points above against what's there before guessing.
   an unknown table name, invalid SQL, or a query joining more data than the
   size limit allows.
 
+### Datatable rows
+
+Rows are addressed by `_id` (a UUID) — get it from `GET .../rows` or by
+selecting `_id` in `/datatables/query`. `_id`, `_created_at`, `_updated_at`
+are read-only: sending one is a 400.
+
+Values are validated against the column types — the same rules as the
+agents' own writes, so an invalid value is a 400 and nothing is written:
+
+- `number` — a JSON number or a numeric string (`"2.5"`). Not `""`, not
+  `true`, not a number too large to store.
+- `boolean` — `true`/`false`, or the strings `"true"`/`"false"`/`"1"`/`"0"`.
+  Anything else (`"yes"`, `"нет"`) is rejected rather than guessed.
+- `date` — ISO 8601 only: `"2026-07-29"` or `"2026-07-29T12:00:00Z"` (an
+  offset like `+03:00` is fine). `"29.07.2026"` or free text is rejected —
+  dates are compared as strings in queries, so any other format would make
+  `WHERE due > '2026-01-01'` return wrong rows. Convert before sending.
+- A `required` column must have a value: `null`, a missing key on insert, or
+  an empty/whitespace-only string is rejected, on insert and on `PATCH`.
+
+- `GET /api/bot/datatables/:id/rows?limit=100&offset=0` — rows in insertion
+  order, stable between pages, so walking `offset` covers every row exactly
+  once (`limit` 1–500, default 100). Returns
+  `{ rows: [{ id, data, source, createdAt, updatedAt }], total }`. For
+  filtering or sorting use `/datatables/query` instead.
+- `POST /api/bot/datatables/:id/rows` — add rows:
+  ```json
+  { "rows": [{ "order_id": "A-1001", "status": "new" }] }
+  ```
+  1–1000 rows per call, all-or-nothing: an unknown column, a missing
+  `required` value, a value that isn't a number for a `number` column, or
+  exceeding the plan's row/size limits rejects the whole call with 400 and
+  nothing is written. Returns `{ rows }` with the created ids. For a larger
+  import, split it into batches of up to 1000 and check `GET /billing`
+  (`datatables`) first so the import doesn't stop halfway on the plan limit.
+- `PATCH /api/bot/datatables/:id/rows/:rowId` — `{ "data": { "status": "paid" } }`.
+  Partial: only the columns present in `data` change, the others keep their
+  values; `null` clears a value (not allowed for a `required` column). An
+  empty `data` is a 400. `{ "$inc": 5 }` atomically adds to a `number` column
+  (safe against concurrent updates; negative and fractional deltas work, an
+  empty cell counts as 0) — on any other column type, or with a non-numeric
+  delta, it's a 400. Returns `{ row }`; 404 if the row doesn't exist in this
+  table.
+- `DELETE /api/bot/datatables/:id/rows/:rowId` — deletes one row, returns
+  `{ deleted: "<rowId>" }`; 404 if it doesn't exist. **Irreversible** — confirm
+  with the user before deleting, and never delete rows in bulk without them
+  having seen which ones.
+
+No `dryRun` on row writes — show the user the rows you're about to send (or
+a sample plus the count, for a big import) before calling.
+
 ### Datatable access (which agents can query which table)
 
 Only `default` and scenario agents can ever be granted access — `spam`,
@@ -644,6 +715,94 @@ Endpoints:
   "Disconnect" action does). Fully reversible by PATCHing `enabled: true`
   again, so it isn't gated behind a delete-only-in-the-dashboard rule. Only
   `default` and scenario agents are eligible.
+
+### First line
+
+The **first line** (L1, "Первая линия", "Вопрос-ответ") is a list of ready
+answers in FAQ style: a main question, up to 9 similar wordings of it, and
+either a fixed `answer` that is sent word for word, or `redirect: true` —
+transfer to an operator. Use it where the wording must not change (a
+regulation, a legal phrase) and for sensitive topics that must always reach
+a human (refunds, data deletion).
+
+**When it fires.** The first line is not a separate pipeline step and not a
+template — it lives inside the agent's knowledge search tool
+(`search_context`):
+
+1. The agent decides to search and calls the tool with an `inquiry` — its own
+   generalized version of the client's question with the dialog's context
+   (plus `tags`, if the agent has the "filter by KB tags" option).
+2. Before the knowledge base, that `inquiry` is matched against every L1
+   question and similar question **by meaning** (embeddings, with the
+   glossary applied), not by exact text. With `tags`, only L1 records with
+   a matching tag take part.
+3. A match on a redirect record → the conversation goes to an operator right
+   away (journal: `OPERATOR`, reason `RULE`). A match on an answer record →
+   that `answer` (plus `imageUrl`) becomes the bot's reply instead of one
+   the model would compose. Otherwise the KB search runs as usual.
+
+Consequences — check these first when "the first line didn't fire":
+
+- **No search, no first line.** If the agent answers without searching —
+  from its prompt, from a datatable, by asking a clarifying question, by
+  handing off to a scenario, or because the prompt lets it use general
+  knowledge — L1 is never consulted. An agent with the `disableKb` option
+  has no search tool at all, so L1 never works for it.
+- **It works only early in a conversation.** After an L1 match **or after
+  any search that found KB documents**, L1 is switched off for that
+  conversation (for 10 hours). A question asked after the bot has already
+  answered something from the KB will not hit L1, even if it matches
+  exactly — test L1 in a fresh conversation.
+- **Matching is against the agent's `inquiry`, not the raw message.** The
+  journal/history audit shows the search query the agent used; when an
+  expected record didn't match, add that query as a similar question. A
+  query with specific numbers, dates or names often won't match a generic
+  question — handle those in the prompt instead.
+- A main question that is too broad fires too often; keep it narrow and
+  use the similar questions to cover phrasings.
+- An "odd fixed answer the prompt doesn't explain" is often an L1 record —
+  look in `GET /first-line` for it.
+
+L1 questions count toward the knowledge base size quota
+(`GET /billing` → `knowledgeBase`).
+
+Endpoints:
+
+- `GET /api/bot/first-line` — every record:
+  `{ items: [{ id, question, similarQuestions, answer, redirect, enabled, imageUrl, tag }] }`.
+  `answer` is `null` for a redirect record.
+- `POST /api/bot/first-line` — create:
+  ```json
+  {
+    "question": "Как вернуть товар?",
+    "similarQuestions": ["Хочу сделать возврат", "Можно сдать покупку обратно?"],
+    "answer": "Вернуть товар можно в течение 14 дней — оформите заявку в личном кабинете."
+  }
+  ```
+  `answer` is required unless `"redirect": true`, and sending both is a 400
+  — a redirect record has no answer. Optional: `imageUrl` (an `http(s)` link
+  sent along with the answer), `tag`, `"enabled": false` to create it
+  switched off. A similar question that repeats the main one or another
+  similar question is dropped — the returned `item` shows what was kept.
+  Returns `{ item }`. Not idempotent — see Rules.
+- `PATCH /api/bot/first-line/:id` — partial: only the fields you send change.
+  `similarQuestions` replaces the whole list; `imageUrl`/`tag` set to `null`
+  remove them. Changing `answer` on a redirect record needs
+  `"redirect": false` in the same call, otherwise it's a 400.
+  `{ "enabled": false }` switches a record off (it stops matching, its
+  content stays) and `true` back on. Returns `{ item }`.
+- `DELETE /api/bot/first-line/:id` — deletes the record. **Irreversible** —
+  confirm with the user first; if they only want it to stop answering,
+  suggest `enabled: false` instead.
+
+No `dryRun` here — show the user the record you're about to send first.
+
+Limits and errors (400 with the message): every question — main and similar
+— must be unique across the bot's whole first line, case-insensitively; a
+duplicate is rejected with the id of the record that already has it, so
+edit that record instead of creating a second one. At most 9 similar
+questions per record, each question at most 150 characters, and the
+knowledge base size quota applies. An unknown `:id` is a 404.
 
 ### Knowledge base articles
 
@@ -818,6 +977,68 @@ own `mainConversationId` field would show).
   from what a Wikibot staff member sees in the dashboard is expected and not
   a bug.
 
+### `GET /api/bot/billing` (plan, credits, limits)
+
+Read-only — billing can't be changed through this API (plan, top-ups, and
+credit limits are set in the dashboard). Use it when the user asks why the
+bot stopped answering, how many credits are left, or whether a knowledge
+base / datatable upload will fit.
+
+```json
+{
+  "plan": "growth",
+  "isPaid": true,
+  "expiresAt": "2026-11-01T00:00:00.000Z",
+  "credits": 1200,
+  "canQuery": true,
+  "creditLimits": {
+    "bot":     { "soft": { "day": 50, "month": null, "chat": null },
+                 "hard": { "day": 100, "month": null, "chat": 5 } },
+    "account": { "soft": { "day": null, "month": null, "chat": null },
+                 "hard": { "day": null, "month": 3000, "chat": null } }
+  },
+  "creditUsage": {
+    "bot": { "day": 12.5, "month": 340 },
+    "account": { "day": 40, "month": 1210 },
+    "periodStart": { "day": "2026-10-06T00:00:00.000Z", "month": "2026-10-01T00:00:00.000Z" }
+  },
+  "knowledgeBase": {
+    "sizeUsed": 3145728, "sizeUsedByBot": 1048576,
+    "sizeLimit": { "base": 20971520, "addon": 0, "total": 20971520 },
+    "downloadsUsed": 1200,
+    "downloadsLimit": { "base": 20000, "addon": 0, "total": 20000 },
+    "withinLimits": true
+  },
+  "datatables": {
+    "tablesUsed": 2, "tablesLimit": 10,
+    "sizeUsed": 52000, "sizeLimit": 10485760,
+    "maxRowsPerTable": 5000
+  }
+}
+```
+
+- `credits` — credits left in the current plan period. The account's money
+  balance isn't exposed here (a key may belong to someone managing the bot on
+  the owner's behalf). On a paid plan the bot keeps answering after `credits`
+  hits 0 by spending that balance, so judge "can the bot answer" by
+  `canQuery`, not by `credits`: `canQuery: false` means neither the plan nor
+  the balance has a credit left and the bot can't answer at all — the owner
+  has to top up or renew in the dashboard.
+- `creditLimits`: `null` = that limit is off. Both levels apply, the bot's
+  checked first. **Soft** only sends a notification when crossed; **hard**
+  stops the bot answering until the period resets (`day`/`month`), or stops
+  answering in that one conversation (`chat`, per-conversation spend). Compare
+  with `creditUsage` (day and month spend so far; there is no per-chat
+  figure here) — a hard limit with usage at or above it is why a bot went
+  silent while `canQuery` is still `true`.
+- `knowledgeBase` is **account-wide** (all bots of the owner share it),
+  except `sizeUsedByBot`. Sizes are bytes; downloads are pages fetched by the
+  crawler this month. `withinLimits: false` means new crawls/uploads will be
+  rejected (unless an expired add-on renews automatically first) until
+  something is removed or an add-on is bought.
+- `datatables` is **per bot**; sizes are bytes, `maxRowsPerTable: null` means
+  no plan-specific cap — the absolute ceiling of 50,000 rows still applies.
+
 ## Other endpoints (accept `ask` or `manage`)
 
 These predate the config API and aren't config-shaped, but are useful in the
@@ -857,6 +1078,9 @@ if that's all the user's key has):
 
 ## Rules
 
+- For a goal-shaped request, pick the mechanism from
+  [solutions.md](solutions.md) and say why before creating anything; don't
+  default to stuffing data into the prompt or the KB.
 - Never call a write endpoint with `dryRun` omitted (where the endpoint
   supports it — `/config`, `/flows/:flowId/agents`,
   `/flows/:flowId/agents/:name`, and `/flows/:flowId/clone`) unless the user
@@ -869,14 +1093,20 @@ if that's all the user's key has):
   where `true` and `false` read backwards from the name.
 - Never invent an agent `name`, job `id`, or datatable `id` — always resolve
   it from a `GET` call in this session first.
-- There is no delete endpoint anywhere in this API. If the user asks to
-  remove an agent's scenario, a job, or a datatable, tell them to do it from
-  the Wikibot dashboard instead of trying to fake it via this API.
+- The only delete endpoints in this API are for a datatable's rows
+  (`DELETE /datatables/:id/rows/:rowId`) and first line records
+  (`DELETE /first-line/:id`). If the user asks to remove an
+  agent's scenario, a job, a tool, or a whole datatable, tell them to do it
+  from the Wikibot dashboard instead of trying to fake it via this API (e.g.
+  don't "empty" a table by deleting its rows when they asked to delete the
+  table).
 - **The creating POST endpoints are not idempotent** (`/tools`,
-  `/datatables`, `/articles`, `/flows/:flowId/agents`, `/flows/:flowId/clone`)
-  — there is no `Idempotency-Key`. A retried POST after a timeout or a
-  dropped connection can create a duplicate, and — see above — there's no
-  delete endpoint to clean it up afterwards; only the dashboard can. Don't
+  `/datatables`, `/datatables/:id/rows`, `/first-line`, `/articles`,
+  `/flows/:flowId/agents`, `/flows/:flowId/clone`) — there is no
+  `Idempotency-Key`. A retried POST after a timeout or a dropped connection
+  can create a duplicate, and — see above — except for datatable rows and
+  first line records there's no delete endpoint to clean it
+  up afterwards; only the dashboard can. Don't
   blindly retry a POST that may have already succeeded server-side; if a call
   times out, check the resource's list endpoint first to see whether it
   actually landed before deciding to resend.

@@ -73,21 +73,32 @@ export WIKIBOT_API_KEY="..."
   instruction, in either dialog-transfer or attached-skill mode.
 - **Flows** — clone a whole flow with its agents, jobs and access grants.
 - **Jobs** — proactive follow-ups that fire after a conversation goes quiet.
-- **Datatables** — create tables, change their schema, query the rows with
-  read-only SQL, and control which agents may read them.
+- **Datatables** — create tables, change their schema, add, edit and delete
+  rows, query them with read-only SQL, and control which agents may read
+  them.
+- **First line** — add, edit, switch off and delete fixed FAQ answers and
+  "always transfer to an operator" questions.
+- **Billing** — see the plan, remaining credits, spend against credit limits,
+  and knowledge base / datatable quotas (read-only).
 - **REST function tools** — define a function the bot's model can call against
   your own API, and connect it to specific agents.
 - **Knowledge base** — write and edit private articles, add crawl sources,
   upload files, and run the bot's own retrieval search.
+- **Solution recipes** — knows which mechanism fits a typical client need
+  (a catalog goes into a memory table, live order status into a REST
+  function, regulated answers into the first line, and so on) and ships
+  ready-made prompts and function definitions for them.
 - **Debugging** — read a conversation's full history with the step-by-step
   analysis of what handled each request, and search the request journal by
   date, outcome or text.
 
 ## Notes
 
-- **Nothing can be deleted through this skill.** It creates and edits only;
-  removing an agent, job, datatable or tool stays a dashboard action. The one
-  exception is disconnecting a tool from an agent, which is reversible.
+- **Configuration can't be deleted through this skill.** It creates and
+  edits only; removing an agent, job, datatable or tool stays a dashboard
+  action. The exceptions are datatable rows and first line records (content,
+  not configuration — the agent confirms with you before deleting any) and
+  disconnecting a tool from an agent, which is reversible.
 - Changes to settings and agents are previewed first: the agent shows you the
   before/after diff and applies it only after you confirm.
 - Requests are rate limited per bot (120/minute, and 20/minute for the
