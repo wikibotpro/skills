@@ -65,7 +65,8 @@ export WIKIBOT_API_KEY="..."
 ## What it can do
 
 - **Bot settings** — greeting/gratitude/no-answer templates, operator transfer
-  wording, ignore phrases, working hours, answer delay, glossary.
+  wording, ignore/greeting/gratitude phrases, answer delay, language. Working
+  hours and the glossary are visible but stay dashboard-only.
 - **Agents** — edit the default agent's instruction, turn the `spam`,
   `operator`, `editor`, `translator` and `summary` agents on or off, change
   their options.

@@ -276,6 +276,12 @@ Returns the current whitelisted config view:
 }
 ```
 
+**Read-only here: `glossary`, `workingHours`, `botWorkingHours`.** They are
+returned so you can reason about the bot's behavior, but they are not in
+`/config/schema` and `PATCH` can't change them. Editing the glossary or
+either schedule is a dashboard action (Обучение → Глоссарий; the bot's
+settings page for working hours) — say so instead of looking for a path.
+
 ### `GET /api/bot/config/schema`
 
 ```json

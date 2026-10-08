@@ -27,7 +27,7 @@ Ask what kind of information or behavior the client actually has, then match:
 | Long explanatory text: manuals, policies, how-tos, FAQs in prose | **Knowledge base** (crawl, upload, or private article) | Retrieval works well for prose; tables don't. |
 | An answer that must be word-for-word per regulation, or a sensitive topic that must always go to a human (refunds, data deletion) | **First line (L1)** — `/first-line` | A prompt rule gets paraphrased; L1 returns the fixed text or transfers instead of a composed answer. Fires only when the agent searches, and early in a conversation — see "First line" in SKILL.md. |
 | A flood of identical simple questions (hours, delivery terms, contacts) in widget/Telegram/MAX | **Button menu** — dashboard only | Answers without an LLM call — zero credits. Not supported for helpdesk integrations yet. |
-| Company-specific terms, abbreviations, slang | **Glossary** (`glossary` in `/config` if the schema exposes it, otherwise dashboard) | Improves KB/L1 matching at index time; a prompt can't fix retrieval. |
+| Company-specific terms, abbreviations, slang | **Glossary** — dashboard only (Обучение → Глоссарий); readable via `GET /config` | Improves KB/L1 matching at index time; a prompt can't fix retrieval. |
 | Key facts the bot must never get wrong: contacts, requisites, which email to give | **Default agent prompt** | Anything not written down is a grey zone the model fills in by guessing. |
 | A narrow multi-step process (booking, refund intake, delivery calc) | **Scenario** | Keeps the main prompt short; see "Scenarios" below for which mode. |
 | Act after the client goes quiet (follow-up, "is your issue solved?") | **Job** | The only thing that runs without a client message. |
@@ -155,9 +155,10 @@ Don't enable both — the operator gets two summaries.
 
 Two layers, pick by how simple the schedule is:
 
-- **Fixed schedule** → bot-level settings: `botWorkingHours` /
-  `workingHours` and the `templates.nonWorkingBotRedirect.*` text in
-  `/config`. No prompt work, applied before the agent runs (cheaper).
+- **Fixed schedule** → bot-level working hours (set in the dashboard — the
+  schedules are read-only in `/config`) plus the
+  `templates.nonWorkingBotRedirect.*` text, which you can edit via
+  `PATCH /config`. No prompt work, applied before the agent runs (cheaper).
 - **Conditional logic** (only some topics, a lunch break, different text per
   day) → agent options "Дата и время" + "Сообщение при переводе" (check the
   agent's `options` keys in `GET .../agents`; if they aren't there, it's a

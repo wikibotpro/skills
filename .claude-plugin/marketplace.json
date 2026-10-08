@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Agent skills for configuring and debugging Wikibot bots.",
-    "version": "1.1.0"
+    "version": "1.1.1"
   },
   "plugins": [
     {
       "name": "wikibot-config",
       "source": "./",
       "description": "Read and edit a Wikibot bot's configuration — settings, agents, scenarios, jobs, datatables and their rows, the first line, REST function tools, knowledge base articles, billing and limits, and conversation history — through the Wikibot public API, with recipes for common client needs.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "category": "productivity",
       "keywords": ["wikibot", "chatbot", "support", "configuration", "api"]
     }

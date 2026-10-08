@@ -1,6 +1,6 @@
 {
   "name": "wikibot-config",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Configure a Wikibot bot from Claude Code: bot-level settings and templates, per-agent instructions, scenarios, proactive jobs, datatables and their rows, the first line (fixed FAQ answers), custom REST function tools, knowledge base articles, billing and plan limits, and the request journal — all through the Wikibot public API, with recipes for common client needs.",
   "author": {
     "name": "Wikibot",
