@@ -97,6 +97,14 @@ carry e.g. an order number across scenario hand-offs.
 
 ### Conversation history from the helpdesk → REST tool
 
+**First check the built-in `dialog_history` skill** (SKILL.md, "Dialog
+history"): for the chat center, Carrot quest, Usedesk, HelpDeskEddy and
+Bitrix24 it already adds the start of the current ticket and the client's
+last previous ticket, with no tool to maintain —
+`PATCH /flows/:flowId/agents/dialog_history { "enabled": true }`. Use the
+REST tool below for other helpdesks (e.g. Omnidesk) or when the bot must
+look the ticket up on demand rather than once per conversation.
+
 (docs/solutions/history — HelpDeskEddy, Usedesk, Omnidesk.) Lets the bot read
 the earlier client↔operator exchange in the ticket instead of re-asking.
 

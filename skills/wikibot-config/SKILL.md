@@ -34,9 +34,9 @@ A bot has one or more **flows** (`GET /api/bot/flows`).
 Each flow has one **default agent** (the one that actually talks to the
 client) plus:
 
-- five fixed **service agents** — `spam`, `operator`, `editor`, `translator`,
-  `summary` — each implementing one specific behavior (see below), on or off
-  independently of everything else.
+- six fixed **service agents** — `spam`, `operator`, `editor`, `translator`,
+  `summary`, `dialog_history` — each implementing one specific behavior (see
+  below), on or off independently of everything else.
 - any number of **scenario agents** (`scenario_<name>`) — a separate
   instruction for one narrow topic (refunds, booking, a specific product).
   This API can create a new one (`POST /flows/:flowId/agents`) as well as
@@ -64,8 +64,10 @@ stop *before the AI agent is ever called*:
       human.
    5. Outside bot's working hours → `templates.nonWorkingBotRedirect`.
    6. Consecutive-answer limit exceeded → transfer or skip.
-3. **The AI agent** (default, or a scenario it forwards to) — this is where
-   the agent's `prompt` and its custom function tools actually run. The
+3. **The AI agent** (default, or a scenario it forwards to). Right before it,
+   the `dialog_history` skill (if enabled) may add the client's earlier
+   correspondence to the agent's history — see "Dialog history" below. This
+   is where the agent's `prompt` and its custom function tools actually run. The
    **first line** is checked here too, not earlier: inside the agent's
    knowledge search, right before the knowledge base (see "First line"
    below).
@@ -146,9 +148,9 @@ common way a freshly created scenario ends up silently unreachable.
 greeting/gratitude phrase lists, media/operator-transfer flags, answer
 delay, language) — the same setting regardless of which agent answers.
 `PATCH /flows/:flowId/agents/:name` covers step 3 and the service agents
-themselves (per-agent prompt, and options — including the five service
+themselves (per-agent prompt, and options — including the service
 agents' on/off switches, `translator`'s language list, `summary`'s message
-threshold). Getting a request "wrong bot behavior" from a user, figure out
+threshold, `dialog_history`'s size and trigger). Getting a request "wrong bot behavior" from a user, figure out
 which of the two layers it's actually in before proposing a fix.
 
 ### Jobs run outside this pipeline entirely
@@ -360,7 +362,7 @@ endpoint that still accepts `ask` — despite its name it has always returned
 flows, not agents; use `GET /flows`, the name collision with the actual agent
 list below is not worth the confusion. Each flow has its own set of **agents**: the
 built-in service agents (`default`, `spam`, `operator`, `editor`,
-`translator`, `summary`) plus any custom scenarios (`scenario_something`).
+`translator`, `summary`, `dialog_history`) plus any custom scenarios (`scenario_something`).
 Everything below is scoped to one flow — get its id from `GET /api/bot/flows`
 first.
 
@@ -398,7 +400,7 @@ already exist virtually (see `id: 0` above) and are created on first
   64 characters. 400 if: empty, already taken on this flow, already starts
   with `scenario_` (the prefix is added automatically — don't include it),
   or matches a built-in agent name (`default`, `spam`, `operator`, `editor`,
-  `translator`, `summary`) — confusing side-by-side in
+  `translator`, `summary`, `dialog_history`) — confusing side-by-side in
   `GET /flows/:flowId/agents`, so this endpoint rejects it outright. The
   stored agent name becomes `scenario_<name>`.
 - `description`, `prompt` — required, non-empty. `description` is read by the
@@ -439,13 +441,17 @@ the row. `:name` is the `name` field from the list above (e.g. `spam`,
 Rules the API enforces (same as the dashboard/Copilot):
 
 - `enabled` only works on `spam`, `operator`, `editor`, `translator`,
-  `summary` — `default` always runs and a scenario's activation isn't a
+  `summary`, `dialog_history` — `default` always runs and a scenario's activation isn't a
   switch this API exposes; both are rejected with 400.
 - `prompt` only works on `default`, `spam`, `operator`, `editor`, `summary`,
-  and any scenario — `translator` has no instruction (400 if attempted).
+  `dialog_history`, and any scenario — `translator` has no instruction (400
+  if attempted). `dialog_history`'s prompt is at most 1000 characters.
 - `options.workAsSkill` only applies to a scenario. `options.languages`
   (array of language codes) and `options.minClientMessages` only apply to
-  `translator` / `summary` respectively. `options.description` only applies
+  `translator` / `summary` respectively. `options.maxTokens`,
+  `options.trigger`, `options.maxClientMessages` only apply to
+  `dialog_history` (see "Dialog history" below for the ranges).
+  `options.description` only applies
   to a scenario — this is how you edit the `description` set at creation
   (must stay non-empty); it is the same field the default agent's own
   routing logic reads, so update the mention line if the meaning changed
@@ -454,6 +460,36 @@ Rules the API enforces (same as the dashboard/Copilot):
 - Response shape matches `/config`: `{ "applied": bool, "changes": [{ "field", "oldValue", "newValue" }] }`.
   Use `dryRun: true` first, same rule as bot-level config: show the diff,
   get confirmation, then repeat without `dryRun`.
+
+### Dialog history (`dialog_history`)
+
+A paid skill that, once per conversation and before the agent answers, adds
+to the agent's history what it couldn't see: the start of the current ticket
+before the bot joined (e.g. the client's exchange with an operator) and the
+client's **last previous ticket**. It reads them from the system the
+conversation lives in — chat center, Carrot quest, Usedesk, HelpDeskEddy,
+Bitrix24 (the Bitrix24 webhook needs the `im` scope for previous tickets).
+Elsewhere it finds nothing and charges nothing.
+
+- **Cost:** 0.1 credit per started 500 tokens of the injected block, once per
+  conversation, only when something was actually injected. Name the price
+  when proposing to enable it or raise `maxTokens`.
+- `options.maxTokens` — cap of the block, whole number 500–5000 (the
+  dashboard slider steps by 500). Default 2000.
+- `options.trigger` — `"auto"` (a small model decides from the latest
+  messages whether history is needed) or `"always"` (on the first message of
+  every conversation — and charged in every one). Default `"auto"`.
+- `options.maxClientMessages` — `auto` only: on how many of the client's
+  first messages to ask, 1–5. Default 3.
+- `prompt` — **not an LLM instruction**: the yes/no condition the `auto`
+  decision uses. Empty = the built-in default, the only wording that was
+  measured; don't rewrite it unless the user asks.
+- Values outside these ranges get a 400 with the allowed range.
+
+Fits complaints like "the bot re-asks what the client already told the
+operator" or "the bot doesn't know what we agreed last time" — for the
+integrations above, prefer it over a REST tool that fetches the ticket (see
+solutions.md).
 
 ### `POST /api/bot/flows/:flowId/clone` (duplicate a flow)
 
